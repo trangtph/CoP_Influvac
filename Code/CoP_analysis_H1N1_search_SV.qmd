@@ -1,0 +1,1574 @@
+---
+title: "[P_INFL_OO6] Correlate of Protection analysis"
+subtitle: "Screening for starting values"
+author: "Trang Tu"
+format: 
+  docx:
+    documentclass: report
+    margin-left: 20 mm
+    margin-right: 20 mm
+    margin-top: 20 mm
+    margin-bottom: 20 mm
+    fig-dpi: 300
+    fig-align: center
+    fig-width: 7.5
+    fig-height: 4.5
+execute: 
+  echo: false
+  warning: true
+  message: true
+  output: true
+  freeze: auto
+editor: visual
+---
+
+# Setup
+
+```{r message=FALSE, results='hide', warning=FALSE}
+library(pacman)
+pacman::p_load(
+  tidyverse,
+  ggplot2, 
+  rio, 
+  here,
+  table1,
+  flextable,
+  Surrogate, 
+  tictoc
+)
+
+source(here("Code", "Helper_functions.R"))
+source(here("Code", "ICA.BinCont.Cov_inner.R"))
+
+
+options(scipen = 999)
+```
+
+# Load datasets
+
+```{r}
+analysis_h1n1 <- import(here("Raw_data", "analysis_h1n1.sas7bdat"))
+analysis_h3n2 <- import(here("Raw_data", "analysis_h3n2.sas7bdat"))
+
+# Convert character empty cells -> NA
+analysis_h1n1 <- analysis_h1n1 |> clean_missing()
+analysis_h3n2 <- analysis_h3n2 |> clean_missing()
+
+# Recode the treatment indicator
+analysis_h1n1 <- analysis_h1n1 %>%
+  mutate(
+    ARM = factor(ARM, levels = c(1, 2), labels = c("NIV", "QIV"))
+         ) %>%
+  arrange(log_hi)
+analysis_h3n2 <- analysis_h3n2 %>%
+  mutate(
+    ARM = factor(ARM, levels = c(1, 2), labels = c("NIV", "QIV"))         
+    ) %>%
+  arrange(log_hi)
+
+```
+
+# Select starting values for model parameters
+
+## Mean HI of two groups
+
+### Post-vacc HI titer comparison across arms, between those who had and did not have infection
+
+A/H1N1 HI:
+
+```{r warning=FALSE}
+#| label: fig-prepost_HI_h1
+#| fig-cap: "Distribution of post-vaccination A/H1N1 HI titer by treatment arms"
+
+
+ggplot(analysis_h1n1, aes(x=log_hi, colour = ARM, fill = ARM)) +
+  geom_histogram(bins = 30) +
+  facet_grid(cols = vars(ARM)) +
+  labs(y = "Number of subjects", 
+       x = "Log(e) A/H1N1 HI titer") + 
+  scale_fill_manual(values = c("#2f357c", "#bf3729")) +
+  scale_color_manual(values = c("#2f357c", "#bf3729")) + 
+  scale_x_continuous(breaks = seq(1, 10, by =0.5)) +
+  theme_minimal() + 
+    theme(legend.position = "none")
+```
+
+```{r}
+table1(~ log_hi | ARM + h1n1, data = analysis_h1n1,
+       render.continuous = c(.= "Mean (SD)", 
+                             .="Median [Q1, Q3]",
+                             .= "Min - Max"))
+table1(~ log_hi | h1n1 + ARM, data = analysis_h1n1)
+```
+
+A/H3N2 HI:
+
+```{r warning=FALSE}
+#| label: fig-prepost_HI_h3
+#| fig-cap: "Distribution of post-vaccination A/H3N2 HI titer by treatment arms"
+
+
+ggplot(analysis_h3n2, aes(x=log_hi, colour = ARM, fill = ARM)) +
+  geom_histogram(bins = 20) +
+  facet_grid(cols = vars(ARM)) +
+  labs(y = "Number of subjects", 
+       x = "Log(e) A/H3N2 HI titer") + 
+  scale_fill_manual(values = c("#2f357c", "#bf3729")) +
+  scale_color_manual(values = c("#2f357c", "#bf3729")) + 
+  scale_x_continuous(breaks = seq(1, 10, by =0.5)) +
+  theme_minimal() + 
+    theme(legend.position = "none")
+```
+
+```{r}
+table1(~ log_hi | ARM + h3n2, data = analysis_h3n2)
+
+quantile(
+  analysis_h3n2$log_hi[
+    analysis_h3n2$ARM == "NIV" & analysis_h3n2$h3n2 == 1
+  ]
+)
+
+quantile(
+  analysis_h3n2$log_hi[
+    analysis_h3n2$ARM == "NIV" & analysis_h3n2$h3n2 == 0
+  ]
+)
+
+quantile(
+  analysis_h3n2$log_hi[
+    analysis_h3n2$ARM == "QIV" & analysis_h3n2$h3n2 == 1
+  ]
+)
+
+quantile(
+  analysis_h3n2$log_hi[
+    analysis_h3n2$ARM == "QIV" & analysis_h3n2$h3n2 == 0
+  ]
+)
+```
+
+### Select values based on observed data
+
+Based on the above figures and tables, the following values are chosen:
+
+**HI H1N1**
+
+```{r}
+# Create dataset
+h1_params <- data.frame(
+  parameter = c(
+    "mu0_00", "mu0_01", "mu0_10", "mu0_11",
+    "mu1_00", "mu1_01", "mu1_10", "mu1_11"
+  ),
+  group = c(
+    "Control", "Control", "Control", "Control",
+    "QIV", "QIV", "QIV", "QIV"
+  ),
+  stratum = c(
+    "00", "01", "10", "11",
+    "00", "01", "10", "11"
+  ),
+  explanation = c(
+    "Mean HI in control, infected under both",
+    "Mean HI in control, infected under control only",
+    "Mean HI in control, infected under vaccination only",
+    "Mean HI in control, protected under both",
+    "Mean HI in QIV, infected under both",
+    "Mean HI in QIV, infected under control only",
+    "Mean HI in QIV, infected under vaccination only",
+    "Mean HI in QIV, protected under both"
+  ),
+  value = c(1.6, 2.5, 3.0, 4.5, 3.0, 4.0, 4.5, 5.5)
+)
+
+# View dataset
+
+
+h1_params2 <- flextable::flextable(h1_params) |>
+  set_caption("Parameters for log HI H1N1") |>
+  bold(part = "header") |>
+  fontsize(size = 11) |>
+  align(align = "center", part = "header") |>
+  autofit()
+
+h1_params2
+
+mu0_h1_params <- h1_params$value[h1_params$group=="Control"]
+mu1_h1_params <- h1_params$value[h1_params$group=="QIV"]
+mu0_h1_params_old <- c(1.9, 3.0, 4.0, 5.0)
+```
+
+**HI H3N2**
+
+| Parameter | Explanation | Value |
+|-------------------|----------------------------------|-------------------|
+| $\mu_0^{00}$ | Mean HI in control group, of those who would be infected under both control and vaccination | 1.6 |
+| $\mu_0^{01}$ | Mean HI in control group, of those who would be infected under control but proteced under vaccination | 2.0 |
+| $\mu_0^{10}$ | Mean HI in control group, of those who would be protected under control but infected under vaccination | 4.0 |
+| $\mu_0^{11}$ | Mean HI in control group, of those who would be protected under both control and vaccination | 5.0 |
+| $\mu_1^{00}$ | Mean HI in QIV group, of those who would be infected under both control and vaccination | 3.5 |
+| $\mu_1^{01}$ | Mean HI in QIV group, of those who would be infected under control but proteced under vaccination | 4.0 |
+| $\mu_1^{10}$ | Mean HI in QIV group, of those who would be protected under control but infected under vaccination | 4.5 |
+| $\mu_1^{11}$ | Mean HI in QIV group, of those who would be protected under both control and vaccination | 5.0 |
+
+: Parameters for log HI H3N2
+
+## Standard deviation HI of two groups
+
+Based on the above tables, three SV for the variance $\sigma_{00} = \sigma_{11} = \{0.64, 1, 2.25,4\}$ will be examined. The corresponding standard deviations are {0.8, 1, 1.5, 2}.
+
+# ITCI CoP analysis
+
+## H1N1
+
+### Marginal prob of true endpoint
+
+```{r}
+pi_1. <- mean(analysis_h1n1$no_h1n1[analysis_h1n1$ARM == "NIV"])
+pi_0. <- 1 - pi_1.
+pi_.1  <- mean(analysis_h1n1$no_h1n1[analysis_h1n1$ARM == "QIV"])
+pi_.0 = 1 - pi_.1
+
+up_g_pi_10 <- min(pi_.0, pi_1.)
+```
+
+### Without bootstrapping
+
+#### SD = 0.8
+
+```{r}
+# mu0 = 1.6, 2.5, 3.0, 4.5
+tic("ICA analysis")
+ica_h1_sd08_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(0.8, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(0.8, times = 4)),
+  M = 1000,
+  Seed = 2026,
+  Save.Plots = here("Plot"),
+  Show.Details = TRUE
+)
+toc() # 10 mins
+```
+
+```{r}
+ica_h1_sd08_no_boot_df <- fit_to_df(ica_h1_sd08_no_boot, boot_id = 1)
+ica_h1_sd08_no_boot_df <- ica_h1_sd08_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_sd08_no_boot_df, here("Results", "ica_h1_sd08_no_boot_df.csv"))
+ica_h1_sd08_no_boot_summary <- summarise_ICA(ica_h1_sd08_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_sd08_no_boot)
+
+plot(ica_h1_sd08_no_boot)
+
+cat("\n")
+
+summary(ica_h1_sd08_no_boot$dev_S0)
+summary(ica_h1_sd08_no_boot$dev_S1)
+sd(ica_h1_sd08_no_boot$dev_S0)
+sd(ica_h1_sd08_no_boot$dev_S1)
+
+cat("\n Mean \n ")
+summary(ica_h1_sd08_no_boot$mean_Y_S0)
+ica_h1_sd08_no_boot$mean.S0
+summary(ica_h1_sd08_no_boot$mean_Y_S1)
+ica_h1_sd08_no_boot$mean.S1
+
+cat("\n Variance \n ")
+summary(ica_h1_sd08_no_boot$var_Y_S0)
+ica_h1_sd08_no_boot$var.S0
+summary(ica_h1_sd08_no_boot$var_Y_S1)
+ica_h1_sd08_no_boot$var.S1
+```
+
+
+
+
+#### SD = 1 (Dev 2651)
+
+```{r}
+#mu0_h1_params = c(1.6, 2.5, 3.0, 4.5)
+tic("ICA analysis")
+ica_h1_sd1_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc()
+```
+
+```{r}
+ica_h1_sd1_no_boot_df <- fit_to_df(ica_h1_sd1_no_boot, boot_id = 1)
+ica_h1_sd1_no_boot_df <- ica_h1_sd1_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_sd1_no_boot_df, here("Results", "ica_h1_sd1_no_boot_df.csv"))
+ica_h1_sd1_no_boot_summary <- summarise_ICA(ica_h1_sd1_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_sd1_no_boot)
+plot(ica_h1_sd1_no_boot)
+
+cat("\n")
+summary(ica_h1_sd1_no_boot$dev_S0)
+summary(ica_h1_sd1_no_boot$dev_S1)
+sd(ica_h1_sd1_no_boot$dev_S0)
+sd(ica_h1_sd1_no_boot$dev_S1)
+
+cat("Mean \n")
+summary(ica_h1_sd1_no_boot$mean_Y_S0)
+ica_h1_sd1_no_boot$mean.S0
+summary(ica_h1_sd1_no_boot$mean_Y_S1)
+ica_h1_sd1_no_boot$mean.S1
+
+cat("Var\n")
+summary(ica_h1_sd1_no_boot$var_Y_S0)
+ica_h1_sd1_no_boot$var.S0
+summary(ica_h1_sd1_no_boot$var_Y_S1)
+ica_h1_sd1_no_boot$var.S1
+```
+
+
+Dashed red horizontal line: sample mean and variance.
+
+#### SD = 1.2 (Dev 2761)
+
+```{r}
+tic("ICA analysis")
+ica_h1_sd12_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1.2, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1.2, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() #126 mins
+```
+
+```{r}
+ica_h1_sd12_no_boot_df <- fit_to_df(ica_h1_sd12_no_boot, boot_id = 1)
+ica_h1_sd12_no_boot_df <- ica_h1_sd12_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_sd12_no_boot_df, here("Results", "ica_h1_sd12_no_boot_df.csv"))
+ica_h1_sd12_no_boot_summary <- summarise_ICA(ica_h1_sd12_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_sd12_no_boot)
+plot(ica_h1_sd12_no_boot)
+cat("\n")
+
+summary(ica_h1_sd12_no_boot$dev_S0)
+summary(ica_h1_sd12_no_boot$dev_S1)
+sd(ica_h1_sd12_no_boot$dev_S0)
+sd(ica_h1_sd12_no_boot$dev_S1)
+
+cat("Mean \n")
+summary(ica_h1_sd12_no_boot$mean_Y_S0)
+ica_h1_sd12_no_boot$mean.S0
+summary(ica_h1_sd12_no_boot$mean_Y_S1)
+ica_h1_sd12_no_boot$mean.S1
+
+cat("Var \n")
+summary(ica_h1_sd12_no_boot$var_Y_S0)
+ica_h1_sd12_no_boot$var.S0
+summary(ica_h1_sd12_no_boot$var_Y_S1)
+ica_h1_sd12_no_boot$var.S1
+```
+
+
+
+#### SD = 1.5 (Dev 2954)
+
+```{r}
+tic("ICA analysis")
+ica_h1_sd15_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1.5, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1.5, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() #40 mins
+```
+
+```{r}
+ica_h1_sd15_no_boot_df <- fit_to_df(ica_h1_sd15_no_boot, boot_id = 1)
+ica_h1_sd15_no_boot_df <- ica_h1_sd1_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_sd15_no_boot_df, here("Results", "ica_h1_sd15_no_boot_df.csv"))
+ica_h1_sd15_no_boot_summary <- summarise_ICA(ica_h1_sd15_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_sd15_no_boot)
+plot(ica_h1_sd15_no_boot)
+
+cat("\n")
+summary(ica_h1_sd15_no_boot$dev_S0)
+summary(ica_h1_sd15_no_boot$dev_S1)
+sd(ica_h1_sd15_no_boot$dev_S0)
+sd(ica_h1_sd15_no_boot$dev_S1)
+
+cat("Mean \n")
+summary(ica_h1_sd15_no_boot$mean_Y_S0)
+ica_h1_sd15_no_boot$mean.S0
+summary(ica_h1_sd15_no_boot$mean_Y_S1)
+ica_h1_sd15_no_boot$mean.S1
+
+cat("Var\n")
+summary(ica_h1_sd15_no_boot$var_Y_S0)
+ica_h1_sd15_no_boot$var.S0
+summary(ica_h1_sd15_no_boot$var_Y_S1)
+ica_h1_sd15_no_boot$var.S1
+```
+
+
+#### SD = 1.5 and 1 (Dev 2954)
+
+```{r}
+tic("ICA analysis")
+ica_h1_sd151_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1.5, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc()
+
+```
+
+```{r}
+summary(ica_h1_sd151_no_boot)
+
+plot(ica_h1_sd151_no_boot)
+
+cat("\n")
+summary(ica_h1_sd151_no_boot$dev_S0)
+summary(ica_h1_sd151_no_boot$dev_S1)
+sd(ica_h1_sd151_no_boot$dev_S0)
+sd(ica_h1_sd151_no_boot$dev_S1)
+
+cat("Mean \n")
+summary(ica_h1_sd151_no_boot$mean_Y_S0)
+ica_h1_sd151_no_boot$mean.S0
+summary(ica_h1_sd151_no_boot$mean_Y_S1)
+ica_h1_sd151_no_boot$mean.S1
+
+cat("Var\n")
+summary(ica_h1_sd151_no_boot$var_Y_S0)
+ica_h1_sd151_no_boot$var.S0
+summary(ica_h1_sd151_no_boot$var_Y_S1)
+ica_h1_sd151_no_boot$var.S1
+```
+
+#### SD = 2 (Dev 2794)
+
+```{r}
+tic("ICA analysis")
+ica_h1_sd2_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(2, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(2, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc()
+```
+
+```{r}
+ica_h1_sd2_no_boot_df <- fit_to_df(ica_h1_sd2_no_boot, boot_id = 1)
+ica_h1_sd2_no_boot_df <- ica_h1_sd2_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_sd2_no_boot_df, here("Results", "ica_h1_sd2_no_boot_df.csv"))
+ica_h1_sd2_no_boot_summary <- summarise_ICA(ica_h1_sd2_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_sd2_no_boot)
+
+plot(ica_h1_sd2_no_boot)
+
+cat("\n")
+summary(ica_h1_sd2_no_boot$dev_S0)
+summary(ica_h1_sd2_no_boot$dev_S1)
+sd(ica_h1_sd2_no_boot$dev_S0)
+sd(ica_h1_sd2_no_boot$dev_S1)
+
+cat("Mean \n")
+summary(ica_h1_sd2_no_boot$mean_Y_S0)
+ica_h1_sd2_no_boot$mean.S0
+summary(ica_h1_sd2_no_boot$mean_Y_S1)
+ica_h1_sd2_no_boot$mean.S1
+
+cat("Var\n")
+summary(ica_h1_sd2_no_boot$var_Y_S0)
+ica_h1_sd2_no_boot$var.S0
+summary(ica_h1_sd2_no_boot$var_Y_S1)
+ica_h1_sd2_no_boot$var.S1
+```
+
+**Choose SD = 1 to continue**
+
+#### Mu0_00 = 1.6
+
+```{r}
+mu0_h1_params <- c(1.6, 3.0, 4.0, 5.0)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_00_16_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() #86 mins
+```
+
+```{r}
+ica_h1_mu0_00_16_no_boot_df <- fit_to_df(ica_h1_mu0_00_16_no_boot, boot_id = 1)
+ica_h1_mu0_00_16_no_boot_df <- ica_h1_mu0_00_16_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_mu0_00_16_no_boot_df, here("Results", "ica_h1_mu0_00_16_no_boot_df.csv"))
+ica_h1_mu0_00_16_no_boot_summary <- summarise_ICA(ica_h1_mu0_00_16_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_mu0_00_16_no_boot)
+plot(ica_h1_mu0_00_16_no_boot)
+
+summary(ica_h1_mu0_00_16_no_boot$dev_S0)
+summary(ica_h1_mu0_00_16_no_boot$dev_S1)
+sd(ica_h1_mu0_00_16_no_boot$dev_S0)
+sd(ica_h1_mu0_00_16_no_boot$dev_S1)
+
+summary(ica_h1_mu0_00_16_no_boot$mean_Y_S0)
+ica_h1_mu0_00_16_no_boot$mean.S0
+summary(ica_h1_mu0_00_16_no_boot$mean_Y_S1)
+ica_h1_mu0_00_16_no_boot$mean.S1
+
+summary(ica_h1_mu0_00_16_no_boot$var_Y_S0)
+ica_h1_mu0_00_16_no_boot$var.S0
+summary(ica_h1_mu0_00_16_no_boot$var_Y_S1)
+ica_h1_mu0_00_16_no_boot$var.S1
+```
+
+**Choose mu0_00 = 1.6 to continue**
+
+#### Mu0_01 = 1.8
+
+```{r}
+mu0_h1_params <- c(1.6, 1.8, 4.0, 5.0)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_01_18_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc()
+```
+
+```{r}
+ica_h1_mu0_01_18_no_boot_df <- fit_to_df(ica_h1_mu0_01_18_no_boot, boot_id = 1)
+ica_h1_mu0_01_18_no_boot_df <- ica_h1_mu0_01_18_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_mu0_01_18_no_boot_df, here("Results", "ica_h1_mu0_01_18_no_boot_df.csv"))
+ica_h1_mu0_01_18_no_boot_summary <- summarise_ICA(ica_h1_mu0_01_18_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_mu0_01_18_no_boot)
+plot(ica_h1_mu0_01_18_no_boot)
+
+summary(ica_h1_mu0_01_18_no_boot$dev_S0)
+summary(ica_h1_mu0_01_18_no_boot$dev_S1)
+sd(ica_h1_mu0_01_18_no_boot$dev_S0)
+sd(ica_h1_mu0_01_18_no_boot$dev_S1)
+
+summary(ica_h1_mu0_01_18_no_boot$mean_Y_S0)
+ica_h1_mu0_01_18_no_boot$mean.S0
+summary(ica_h1_mu0_01_18_no_boot$mean_Y_S1)
+ica_h1_mu0_01_18_no_boot$mean.S1
+
+summary(ica_h1_mu0_01_18_no_boot$var_Y_S0)
+ica_h1_mu0_01_18_no_boot$var.S0
+summary(ica_h1_mu0_01_18_no_boot$var_Y_S1)
+ica_h1_mu0_01_18_no_boot$var.S1
+```
+
+
+#### Mu0_01 = 2.0 (Dev 2665)
+
+```{r}
+mu0_h1_params <- c(1.6, 2.0, 4.0, 5.0)
+mu0_h1_params_new <- c(1.6, 2.0, 3, 4.5)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_01_20_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params_new, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() #126 mins
+```
+
+```{r}
+ica_h1_mu0_01_20_no_boot_df <- fit_to_df(ica_h1_mu0_01_20_no_boot, boot_id = 1)
+ica_h1_mu0_01_20_no_boot_df <- ica_h1_mu0_01_20_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_mu0_01_20_no_boot_df, here("Results", "ica_h1_mu0_01_20_no_boot_df.csv"))
+ica_h1_mu0_01_20_no_boot_summary <- summarise_ICA(ica_h1_mu0_01_20_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_mu0_01_20_no_boot)
+plot(ica_h1_mu0_01_20_no_boot)
+
+cat("\n")
+
+summary(ica_h1_mu0_01_20_no_boot$dev_S0)
+summary(ica_h1_mu0_01_20_no_boot$dev_S1)
+sd(ica_h1_mu0_01_20_no_boot$dev_S0)
+sd(ica_h1_mu0_01_20_no_boot$dev_S1)
+
+summary(ica_h1_mu0_01_20_no_boot$mean_Y_S0)
+ica_h1_mu0_01_20_no_boot$mean.S0
+summary(ica_h1_mu0_01_20_no_boot$mean_Y_S1)
+ica_h1_mu0_01_20_no_boot$mean.S1
+
+summary(ica_h1_mu0_01_20_no_boot$var_Y_S0)
+ica_h1_mu0_01_20_no_boot$var.S0
+summary(ica_h1_mu0_01_20_no_boot$var_Y_S1)
+ica_h1_mu0_01_20_no_boot$var.S1
+```
+
+#### Mu0_01 = 3.0 (Dev 2798)
+
+```{r}
+mu0_h1_params_new <- c(1.6, 3.0, 3.5, 4.5)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_01_30_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params_new, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() 
+```
+
+```{r}
+ica_h1_mu0_01_30_no_boot_df <- fit_to_df(ica_h1_mu0_01_30_no_boot, boot_id = 1)
+ica_h1_mu0_01_30_no_boot_df <- ica_h1_mu0_01_30_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_mu0_01_30_no_boot_df, here("Results", "ica_h1_mu0_01_30_no_boot_df.csv"))
+ica_h1_mu0_01_30_no_boot_summary <- summarise_ICA(ica_h1_mu0_01_30_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_mu0_01_30_no_boot)
+plot(ica_h1_mu0_01_30_no_boot)
+
+cat("\n")
+summary(ica_h1_mu0_01_30_no_boot$dev_S0)
+summary(ica_h1_mu0_01_30_no_boot$dev_S1)
+sd(ica_h1_mu0_01_30_no_boot$dev_S0)
+sd(ica_h1_mu0_01_30_no_boot$dev_S1)
+
+summary(ica_h1_mu0_01_30_no_boot$mean_Y_S0)
+ica_h1_mu0_01_30_no_boot$mean.S0
+summary(ica_h1_mu0_01_30_no_boot$mean_Y_S1)
+ica_h1_mu0_01_30_no_boot$mean.S1
+
+summary(ica_h1_mu0_01_30_no_boot$var_Y_S0)
+ica_h1_mu0_01_30_no_boot$var.S0
+summary(ica_h1_mu0_01_30_no_boot$var_Y_S1)
+ica_h1_mu0_01_30_no_boot$var.S1
+```
+
+
+#### Mu0_10 = 2.5 (Dev 2658)
+
+```{r}
+mu0_h1_params_new <- c(1.6, 2.0, 2.5, 4.5)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_10_25_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params_new, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = FALSE
+)
+toc() 
+```
+
+```{r}
+ica_h1_mu0_10_25_no_boot_df <- fit_to_df(ica_h1_mu0_10_25_no_boot, boot_id = 1)
+ica_h1_mu0_10_25_no_boot_df <- ica_h1_mu0_10_25_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_mu0_01_30_no_boot_df, here("Results", "ica_h1_mu0_10_25_no_boot_df.csv"))
+ica_h1_mu0_10_25_no_boot_summary <- summarise_ICA(ica_h1_mu0_10_25_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_mu0_10_25_no_boot)
+
+plot(ica_h1_mu0_10_25_no_boot)
+
+cat("\n")
+summary(ica_h1_mu0_10_25_no_boot$dev_S0)
+summary(ica_h1_mu0_10_25_no_boot$dev_S1)
+sd(ica_h1_mu0_10_25_no_boot$dev_S0)
+sd(ica_h1_mu0_10_25_no_boot$dev_S1)
+
+cat("Mean \n")
+summary(ica_h1_mu0_10_25_no_boot$mean_Y_S0)
+ica_h1_mu0_10_25_no_boot$mean.S0
+summary(ica_h1_mu0_10_25_no_boot$mean_Y_S1)
+ica_h1_mu0_10_25_no_boot$mean.S1
+
+cat("Var\n")
+summary(ica_h1_mu0_10_25_no_boot$var_Y_S0)
+ica_h1_mu0_10_25_no_boot$var.S0
+summary(ica_h1_mu0_10_25_no_boot$var_Y_S1)
+ica_h1_mu0_10_25_no_boot$var.S1
+```
+
+
+#### Mu0_10 = 3.5 (Dev 2656)
+
+```{r}
+mu0_h1_params_new <- c(1.6, 2.5, 3.5, 4.5)
+
+tic("ICA analysis")
+ica_h1_mu0_10_35_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params_new, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = FALSE
+)
+toc() 
+```
+
+```{r}
+ica_h1_mu0_10_35_no_boot_df <- fit_to_df(ica_h1_mu0_10_35_no_boot, boot_id = 1)
+ica_h1_mu0_10_35_no_boot_df <- ica_h1_mu0_10_35_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_mu0_10_35_no_boot_df, here("Results", "ica_h1_mu0_10_35_no_boot_df.csv"))
+ica_h1_mu0_10_35_no_boot_summary <- summarise_ICA(ica_h1_mu0_10_35_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+ica_h1_mu0_10_25_no_boot_df <- fit_to_df(ica_h1_mu0_10_25_no_boot, boot_id = 1)
+ica_h1_mu0_10_25_no_boot_df <- ica_h1_mu0_10_25_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_mu0_01_30_no_boot_df, here("Results", "ica_h1_mu0_10_25_no_boot_df.csv"))
+ica_h1_mu0_10_25_no_boot_summary <- summarise_ICA(ica_h1_mu0_10_25_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_mu0_10_35_no_boot)
+
+plot(ica_h1_mu0_10_35_no_boot)
+
+cat("\n")
+summary(ica_h1_mu0_10_35_no_boot$dev_S0)
+summary(ica_h1_mu0_10_35_no_boot$dev_S1)
+sd(ica_h1_mu0_10_35_no_boot$dev_S0)
+sd(ica_h1_mu0_10_35_no_boot$dev_S1)
+
+cat("Mean \n")
+summary(ica_h1_mu0_10_35_no_boot$mean_Y_S0)
+ica_h1_mu0_10_35_no_boot$mean.S0
+summary(ica_h1_mu0_10_35_no_boot$mean_Y_S1)
+ica_h1_mu0_10_35_no_boot$mean.S1
+
+cat("Var\n")
+summary(ica_h1_mu0_10_35_no_boot$var_Y_S0)
+ica_h1_mu0_10_35_no_boot$var.S0
+summary(ica_h1_mu0_10_35_no_boot$var_Y_S1)
+ica_h1_mu0_10_35_no_boot$var.S1
+```
+
+
+#### mu0_01 = 1.8 & Mu0_10 = 3.0
+
+```{r}
+mu0_h1_params <- c(1.6, 1.8, 3.0, 5.0)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_01_18_10_35_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() 
+```
+
+```{r}
+ica_h1_mu0_01_18_10_35_no_boot_df <- fit_to_df(ica_h1_mu0_01_18_10_35_no_boot, boot_id = 1)
+ica_h1_mu0_01_18_10_35_no_boot_df <- ica_h1_mu0_01_18_10_35_no_boot_df %>%
+  mutate(AIC_S0 = dev_S0 + 2*5,
+         AIC_S1 = dev_S1 + 1*5)
+export(ica_h1_mu0_01_18_10_35_no_boot_df, here("Results", "ica_h1_mu0_01_18_10_35_no_boot_df.csv"))
+ica_h1_mu0_01_18_10_35_no_boot_summary <- summarise_ICA(ica_h1_mu0_01_18_10_35_no_boot_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_h1_mu0_01_18_10_35_no_boot)
+plot(ica_h1_mu0_01_18_10_35_no_boot)
+
+summary(ica_h1_mu0_01_18_10_35_no_boot$dev_S0)
+summary(ica_h1_mu0_01_18_10_35_no_boot$dev_S1)
+sd(ica_h1_mu0_01_18_10_35_no_boot$dev_S0)
+sd(ica_h1_mu0_01_18_10_35_no_boot$dev_S1)
+
+summary(ica_h1_mu0_01_18_10_35_no_boot$mean_Y_S0)
+ica_h1_mu0_01_18_10_35_no_boot$mean.S0
+summary(ica_h1_mu0_01_18_10_35_no_boot$mean_Y_S1)
+ica_h1_mu0_01_18_10_35_no_boot$mean.S1
+
+summary(ica_h1_mu0_01_18_10_35_no_boot$var_Y_S0)
+ica_h1_mu0_01_18_10_35_no_boot$var.S0
+summary(ica_h1_mu0_01_18_10_35_no_boot$var_Y_S1)
+ica_h1_mu0_01_18_10_35_no_boot$var.S1
+```
+
+#### mu0_01 = 1.8 & Mu0_10 = 2.5 & Mu0_11 = 4.0
+
+```{r}
+mu0_h1_params <- c(1.6, 1.8, 2.5, 4.0)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_01_18_10_25_11_40_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() 
+```
+
+```{r}
+summary(ica_h1_mu0_01_18_10_25_11_40_no_boot)
+plot(ica_h1_mu0_01_18_10_25_11_40_no_boot)
+
+summary(ica_h1_mu0_01_18_10_25_11_40_no_boot$dev_S0)
+summary(ica_h1_mu0_01_18_10_25_11_40_no_boot$dev_S1)
+sd(ica_h1_mu0_01_18_10_25_11_40_no_boot$dev_S0)
+sd(ica_h1_mu0_01_18_10_25_11_40_no_boot$dev_S1)
+
+summary(ica_h1_mu0_01_18_10_25_11_40_no_boot$mean_Y_S0)
+ica_h1_mu0_01_18_10_25_11_40_no_boot$mean.S0
+summary(ica_h1_mu0_01_18_10_25_11_40_no_boot$mean_Y_S1)
+ica_h1_mu0_01_18_10_25_11_40_no_boot$mean.S1
+
+summary(ica_h1_mu0_01_18_10_25_11_40_no_boot$var_Y_S0)
+ica_h1_mu0_01_18_10_25_11_40_no_boot$var.S0
+summary(ica_h1_mu0_01_18_10_25_11_40_no_boot$var_Y_S1)
+ica_h1_mu0_01_18_10_25_11_40_no_boot$var.S1
+```
+
+This specification did not improve goodness of fit compared to when Mu0_10 = 3.0 & Mu0_11 = 5.0
+
+#### mu0_01 = 1.8 & Mu0_10 = 4.5
+
+```{r}
+mu0_h1_params <- c(1.6, 1.8, 4.5, 5.0)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_01_18_10_45_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() 
+```
+
+```{r}
+summary(ica_h1_mu0_01_18_10_45_no_boot)
+plot(ica_h1_mu0_01_18_10_45_no_boot)
+
+summary(ica_h1_mu0_01_18_10_45_no_boot$dev_S0)
+summary(ica_h1_mu0_01_18_10_45_no_boot$dev_S1)
+sd(ica_h1_mu0_01_18_10_45_no_boot$dev_S0)
+sd(ica_h1_mu0_01_18_10_45_no_boot$dev_S1)
+
+summary(ica_h1_mu0_01_18_10_45_no_boot$mean_Y_S0)
+ica_h1_mu0_01_18_10_45_no_boot$mean.S0
+summary(ica_h1_mu0_01_18_10_45_no_boot$mean_Y_S1)
+ica_h1_mu0_01_18_10_45_no_boot$mean.S1
+
+summary(ica_h1_mu0_01_18_10_45_no_boot$var_Y_S0)
+ica_h1_mu0_01_18_10_45_no_boot$var.S0
+summary(ica_h1_mu0_01_18_10_45_no_boot$var_Y_S1)
+ica_h1_mu0_01_18_10_45_no_boot$var.S1
+```
+
+This specification (mean deviance 2744) did not improve goodness of fit compared to when Mu0_10 = 3.0 & Mu0_11 = 5.0 (mean deviance 2662)
+
+#### Mu0_01 = 3.5 & mu0_11 = 6.0 (previously 5.0)
+
+```{r}
+mu0_h1_params <- c(1.6, 3.5, 4.0, 6.0)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_01_35_11_60_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() 
+```
+
+```{r}
+summary(ica_h1_mu0_01_35_11_60_no_boot)
+plot(ica_h1_mu0_01_35_11_60_no_boot)
+
+cat("\n")
+summary(ica_h1_mu0_01_35_11_60_no_boot$dev_S0)
+summary(ica_h1_mu0_01_35_11_60_no_boot$dev_S1)
+sd(ica_h1_mu0_01_35_11_60_no_boot$dev_S0)
+sd(ica_h1_mu0_01_35_11_60_no_boot$dev_S1)
+
+cat("\n Mean \n ")
+
+summary(ica_h1_mu0_01_35_11_60_no_boot$mean_Y_S0)
+ica_h1_mu0_01_35_11_60_no_boot$mean.S0
+summary(ica_h1_mu0_01_35_11_60_no_boot$mean_Y_S1)
+ica_h1_mu0_01_35_11_60_no_boot$mean.S1
+
+cat("\n Variance \n ")
+summary(ica_h1_mu0_01_35_11_60_no_boot$var_Y_S0)
+ica_h1_mu0_01_35_11_60_no_boot$var.S0
+summary(ica_h1_mu0_01_35_11_60_no_boot$var_Y_S1)
+ica_h1_mu0_01_35_11_60_no_boot$var.S1
+```
+
+#### Mu0_01 = 3.5 & mu0_11 = 4.5 (previously 5.0)
+
+```{r}
+mu0_h1_params <- c(1.6, 3.5, 4.0, 4.5)
+```
+
+```{r}
+tic("ICA analysis")
+ica_h1_mu0_01_35_11_45_no_boot <- ICA.BinCont(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat, 
+  BS = FALSE,    #No bootstrap
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(mu0_h1_params, rep(1, times = 4)),
+  Theta.S_1 = c(mu1_h1_params, rep(1, times = 4)),
+  M = 1000,
+  Seed = 2026, 
+  Show.Details = TRUE
+)
+toc() 
+```
+
+```{r}
+summary(ica_h1_mu0_01_35_11_45_no_boot)
+plot(ica_h1_mu0_01_35_11_45_no_boot)
+
+cat("\n")
+
+summary(ica_h1_mu0_01_35_11_45_no_boot$dev_S0)
+summary(ica_h1_mu0_01_35_11_45_no_boot$dev_S1)
+sd(ica_h1_mu0_01_35_11_45_no_boot$dev_S0)
+sd(ica_h1_mu0_01_35_11_45_no_boot$dev_S1)
+
+cat("\n Mean \n ")
+summary(ica_h1_mu0_01_35_11_45_no_boot$mean_Y_S0)
+ica_h1_mu0_01_35_11_45_no_boot$mean.S0
+summary(ica_h1_mu0_01_35_11_45_no_boot$mean_Y_S1)
+ica_h1_mu0_01_35_11_45_no_boot$mean.S1
+
+cat("\n Variance \n ")
+summary(ica_h1_mu0_01_35_11_45_no_boot$var_Y_S0)
+ica_h1_mu0_01_35_11_45_no_boot$var.S0
+summary(ica_h1_mu0_01_35_11_45_no_boot$var_Y_S1)
+ica_h1_mu0_01_35_11_45_no_boot$var.S1
+```
+
+### Model with covariate
+
+#### Starting values based on linear model
+
+```{r}
+analysis_h1n1_QIV <- analysis_h1n1 %>% filter(treat == 1)
+analysis_h1n1_control <- analysis_h1n1 %>% filter(treat == -1)
+
+
+hi_h1n1_QIV_pred2 <- lm(log_hi ~ center_log_hi_base, data = analysis_h1n1_QIV)
+summary(hi_h1n1_QIV_pred2)
+
+
+cat("Initial SD QIV:" , sd(residuals(hi_h1n1_QIV_pred2)))
+
+hi_h1n1_control_pred2 <- lm(log_hi ~ center_log_hi_base, data = analysis_h1n1_control)
+summary(hi_h1n1_control_pred2)
+
+cat("Initial SD control:" , sd(residuals(hi_h1n1_control_pred2)))
+
+```
+
+#### Mod 1: SD = 1 (AIC 2657-3360)
+
+```{r}
+intercept_sv_S0 <- 2.5
+beta_sv_S0 <- 0
+sigma_S0 <- 1
+b1_SV_S0 <- intercept_sv_S0 - 1.5
+b2_SV_S0 <- intercept_sv_S0 - 0.5
+b3_SV_S0 <- intercept_sv_S0
+b4_SV_S0 <- intercept_sv_S0 + 0.5
+
+intercept_sv_S1 <- 4.5
+beta_sv_S1 <- 0
+sigma_S1 <- 1
+b1_SV_S1 <- intercept_sv_S1 - 1.5
+b2_SV_S1 <- intercept_sv_S1 - 0.5
+b3_SV_S1 <- intercept_sv_S1
+b4_SV_S1 <- intercept_sv_S1 + 0.5
+```
+
+```{r}
+ica_covar_sd1 <- ICA.BinCont.Cov(
+  Dataset    = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat,
+  Cov = center_log_hi_base,
+  Center.Cov=FALSE,
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0  = c(b1_SV_S0, b2_SV_S0, b3_SV_S0, b4_SV_S0, beta_sv_S0, sigma_S0),   # 4 intercepts + slope + sigma
+  Theta.S_1  = c(b1_SV_S1, b2_SV_S1, b3_SV_S1, b4_SV_S1, beta_sv_S1, sigma_S1),
+  x_eval = 0,
+  Monotonicity = FALSE, Independence = FALSE,
+  HAA = FALSE, Cond_ind = FALSE,
+  M = 1000, 
+  Seed = 2026,
+  Show.Details = TRUE
+)
+  
+```
+
+```{r}
+ica_covar_sd1_df <- fit_to_df(ica_covar_sd1, boot_id = 1)
+
+export(ica_covar_sd1_df, here("Results", "ica_h1_covar_sd1.csv"))
+ica_covar_sd1_summary <- summarise_ICA(ica_covar_sd1_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_covar)
+plot(ica_covar)
+
+cat("\n Deviance")
+summary(ica_covar$dev_S0)
+summary(ica_covar$dev_S1)
+sd(ica_covar$dev_S0)
+sd(ica_covar$dev_S1)
+summary(ica_covar$dev_S0_new)
+summary(ica_covar$dev_S1_new)
+cat("\n Mean \n ")
+
+summary(ica_covar$mean_Y_S0)
+ica_covar$mean.S0
+summary(ica_covar$mean_Y_S1)
+ica_covar$mean.S1
+
+cat("\n Variance \n ")
+summary(ica_covar$var_Y_S0)
+ica_covar$var.S0
+summary(ica_covar$var_Y_S1)
+ica_covar$var.S1
+```
+
+#### Mod 2: SD = 1.2 (AIC 2655-3360)
+
+```{r}
+intercept_sv_S0 <- 2.5
+beta_sv_S0 <- 0
+sigma_S0 <- 1.2
+b1_SV_S0 <- intercept_sv_S0 - 1.5
+b2_SV_S0 <- intercept_sv_S0 - 0.5
+b3_SV_S0 <- intercept_sv_S0
+b4_SV_S0 <- intercept_sv_S0 + 0.5
+
+intercept_sv_S1 <- 4.5
+beta_sv_S1 <- 0
+sigma_S1 <- 1.2
+b1_SV_S1 <- intercept_sv_S1 - 1.5
+b2_SV_S1 <- intercept_sv_S1 - 0.5
+b3_SV_S1 <- intercept_sv_S1
+b4_SV_S1 <- intercept_sv_S1 + 0.5
+```
+
+```{r}
+ica_covar_sd12 <- ICA.BinCont.Cov(
+  Dataset    = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat,
+  Cov = center_log_hi_base,
+  Center.Cov=FALSE,
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0  = c(b1_SV_S0, b2_SV_S0, b3_SV_S0, b4_SV_S0, beta_sv_S0, sigma_S0),   # 4 intercepts + slope + sigma
+  Theta.S_1  = c(b1_SV_S1, b2_SV_S1, b3_SV_S1, b4_SV_S1, beta_sv_S1, sigma_S1),
+  x_eval = 0,
+  Monotonicity = FALSE, Independence = FALSE,
+  HAA = FALSE, Cond_ind = FALSE,
+  M = 1000, 
+  Seed = 2026,
+  Show.Details = TRUE
+)
+  
+```
+
+```{r}
+ica_covar_sd12_df <- fit_to_df(ica_covar_sd12, boot_id = 1)
+export(ica_covar_sd12_df, here("Results", "ica_h1_covar_sd12.csv"))
+ica_covar_sd12_summary <- summarise_ICA(ica_covar_sd12_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+```{r}
+summary(ica_covar_sd12)
+plot(ica_covar_sd12)
+
+cat("\n Deviance \n")
+summary(ica_covar_sd12$dev_S0)
+summary(ica_covar_sd12$dev_S1)
+sd(ica_covar_sd12$dev_S0)
+sd(ica_covar_sd12$dev_S1)
+
+cat("\n Mean \n ")
+
+summary(ica_covar_sd12$mean_Y_S0)
+ica_covar_sd12$mean.S0
+summary(ica_covar_sd12$mean_Y_S1)
+ica_covar_sd12$mean.S1
+
+cat("\n Variance \n ")
+summary(ica_covar_sd12$var_Y_S0)
+ica_covar_sd12$var.S0
+summary(ica_covar_sd12$var_Y_S1)
+ica_covar_sd12$var.S1
+
+cat("\n Model for mean \n ")
+ica_covar_sd12$covar_eval
+cat("\n Intercept \n ")
+summary(ica_covar_sd12$intercept_s0_00)
+summary(ica_covar_sd12$intercept_s0_01)
+summary(ica_covar_sd12$intercept_s0_10)
+summary(ica_covar_sd12$intercept_s0_11)
+cat("\n Slope \n ")
+summary(ica_covar_sd12$slope_s0)
+summary(ica_covar_sd12$slope_s1)
+
+```
+
+#### Mod 3: SD = 1.5 (AIC 2655-3360)
+
+```{r}
+intercept_sv_S0 <- 2.5
+beta_sv_S0 <- 0
+sigma_S0 <- 1.5
+b1_SV_S0 <- intercept_sv_S0 - 1.5
+b2_SV_S0 <- intercept_sv_S0 - 0.5
+b3_SV_S0 <- intercept_sv_S0
+b4_SV_S0 <- intercept_sv_S0 + 0.5
+
+intercept_sv_S1 <- 4.5
+beta_sv_S1 <- 0
+sigma_S1 <- 1.5
+b1_SV_S1 <- intercept_sv_S1 - 1.5
+b2_SV_S1 <- intercept_sv_S1 - 0.5
+b3_SV_S1 <- intercept_sv_S1
+b4_SV_S1 <- intercept_sv_S1 + 0.5
+```
+
+```{r}
+ica_covar_sd15 <- ICA.BinCont.Cov(
+  Dataset    = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat,
+  Cov = center_log_hi_base,
+  Center.Cov=FALSE,
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0  = c(b1_SV_S0, b2_SV_S0, b3_SV_S0, b4_SV_S0, beta_sv_S0, sigma_S0),   # 4 intercepts + slope + sigma
+  Theta.S_1  = c(b1_SV_S1, b2_SV_S1, b3_SV_S1, b4_SV_S1, beta_sv_S1, sigma_S1),
+  x_eval = 0,
+  Monotonicity = FALSE, Independence = FALSE,
+  HAA = FALSE, Cond_ind = FALSE,
+  M = 1000, 
+  Seed = 2026,
+  Show.Details = TRUE
+)
+  
+```
+
+```{r}
+ica_covar_sd15_df <- fit_to_df(ica_covar_sd15, boot_id = 1)
+export(ica_covar_sd15_df, here("Results", "ica_h1_covar_sd15_df.csv"))
+ica_covar_sd15_summary <- summarise_ICA(ica_covar_sd15_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+#### Mod 3: SD = 2 (AIC 2655-3360)
+
+```{r}
+intercept_sv_S0 <- 2.5
+beta_sv_S0 <- 0
+sigma_S0 <- 2
+b1_SV_S0 <- intercept_sv_S0 - 1.5
+b2_SV_S0 <- intercept_sv_S0 - 0.5
+b3_SV_S0 <- intercept_sv_S0
+b4_SV_S0 <- intercept_sv_S0 + 0.5
+
+intercept_sv_S1 <- 4.5
+beta_sv_S1 <- 0
+sigma_S1 <- 2
+b1_SV_S1 <- intercept_sv_S1 - 1.5
+b2_SV_S1 <- intercept_sv_S1 - 0.5
+b3_SV_S1 <- intercept_sv_S1
+b4_SV_S1 <- intercept_sv_S1 + 0.5
+```
+
+```{r}
+ica_covar_sd2 <- ICA.BinCont.Cov(
+  Dataset    = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat,
+  Cov = center_log_hi_base,
+  Center.Cov=FALSE,
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0  = c(b1_SV_S0, b2_SV_S0, b3_SV_S0, b4_SV_S0, beta_sv_S0, sigma_S0),   # 4 intercepts + slope + sigma
+  Theta.S_1  = c(b1_SV_S1, b2_SV_S1, b3_SV_S1, b4_SV_S1, beta_sv_S1, sigma_S1),
+  x_eval = 0,
+  Monotonicity = FALSE, Independence = FALSE,
+  HAA = FALSE, Cond_ind = FALSE,
+  M = 1000, 
+  Seed = 2026,
+  Show.Details = TRUE
+)
+  
+```
+
+```{r}
+ica_covar_sd2_df <- fit_to_df(ica_covar_sd2, boot_id = 1)
+export(ica_covar_sd2_df, here("Results", "ica_h1_covar_sd2_df.csv"))
+ica_covar_sd2_summary <- summarise_ICA(ica_covar_sd2_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+#### Mod 4: b1_SV_S0 = 1.6 (Dev 2654)
+
+```{r}
+intercept_sv_S0 <- 2.5
+beta_sv_S0 <- 0
+sigma_S0 <- 1.5
+b1_SV_S0 <- intercept_sv_S0 - 0.9
+b2_SV_S0 <- intercept_sv_S0 - 0.5
+b3_SV_S0 <- intercept_sv_S0
+b4_SV_S0 <- intercept_sv_S0 + 0.5
+
+intercept_sv_S1 <- 4.5
+beta_sv_S1 <- 0
+sigma_S1 <- 1.5
+b1_SV_S1 <- intercept_sv_S1 - 1.5
+b2_SV_S1 <- intercept_sv_S1 - 0.5
+b3_SV_S1 <- intercept_sv_S1
+b4_SV_S1 <- intercept_sv_S1 + 0.5
+```
+
+```{r}
+tic("ICA analysis")
+ica_covar_b1_16 <- ICA.BinCont.Cov(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat,
+  Cov = center_log_hi_base,
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(b1_SV_S0, b2_SV_S0, b3_SV_S0, b4_SV_S0, beta_sv_S0, sigma_S0),
+  Theta.S_1 = c(b1_SV_S1, b2_SV_S1, b3_SV_S1, b4_SV_S1, beta_sv_S1, sigma_S1),
+  M = 1000,
+  Seed = 2026,
+  Center.Cov=FALSE,
+  Show.Details = TRUE
+)
+toc()
+```
+
+```{r}
+ica_covar_b1_16 <- ICA.BinCont.Cov(
+  Dataset    = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat,
+  Cov = center_log_hi_base,
+  Center.Cov=FALSE,
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0  = c(b1_SV_S0, b2_SV_S0, b3_SV_S0, b4_SV_S0, beta_sv_S0, sigma_S0),   # 4 intercepts + slope + sigma
+  Theta.S_1  = c(b1_SV_S1, b2_SV_S1, b3_SV_S1, b4_SV_S1, beta_sv_S1, sigma_S1),
+  x_eval = 0,
+  Monotonicity = FALSE, Independence = FALSE,
+  HAA = FALSE, Cond_ind = FALSE,
+  M = 1000, 
+  Seed = 2026,
+  Show.Details = TRUE
+)
+  
+```
+
+```{r}
+ica_covar_b1_16_df <- fit_to_df(ica_covar_b1_16, boot_id = 1)
+export(ica_covar_b1_16_df, here("Results", "ica_covar_b1_16.csv"))
+ica_covar_b1_16_summary <- summarise_ICA(ica_covar_b1_16_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+#### Mod 5: Age as covariate
+
+```{r}
+intercept_sv_S0 <- 2.5
+beta_sv_S0 <- 0
+sigma_S0 <- 1
+b1_SV_S0 <- intercept_sv_S0 - 1.5
+b2_SV_S0 <- intercept_sv_S0 - 0.5
+b3_SV_S0 <- intercept_sv_S0
+b4_SV_S0 <- intercept_sv_S0 + 0.5
+
+intercept_sv_S1 <- 4.5
+beta_sv_S1 <- 0
+sigma_S1 <- 1
+b1_SV_S1 <- intercept_sv_S1 - 1.5
+b2_SV_S1 <- intercept_sv_S1 - 0.5
+b3_SV_S1 <- intercept_sv_S1
+b4_SV_S1 <- intercept_sv_S1 + 0.5
+```
+
+```{r}
+ica_covar_age <- ICA.BinCont.Cov(
+  Dataset    = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat,
+  Cov = AGE,
+  Center.Cov=TRUE,
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0  = c(b1_SV_S0, b2_SV_S0, b3_SV_S0, b4_SV_S0, beta_sv_S0, sigma_S0),   # 4 intercepts + slope + sigma
+  Theta.S_1  = c(b1_SV_S1, b2_SV_S1, b3_SV_S1, b4_SV_S1, beta_sv_S1, sigma_S1),
+  x_eval = 0,
+  Monotonicity = FALSE, Independence = FALSE,
+  HAA = FALSE, Cond_ind = FALSE,
+  M = 1000, 
+  Seed = 2026,
+  Show.Details = TRUE
+)
+  
+```
+
+```{r}
+ica_covar_age_df <- fit_to_df(ica_covar_age, boot_id = 1)
+export(ica_covar_age_df, here("Results", "ica_h1_covar_age_df.csv"))
+ica_covar_age_summary <- summarise_ICA(ica_covar_age_df,
+                                             output_dir = here("Plot", "Screening for SV"))
+```
+
+### Test Full identifiability
+
+```{r}
+ica_identify <- ICA.BinCont.Cov(
+  Dataset = analysis_h1n1,
+  Surr = log_hi,
+  True = no_h1n1,             
+  Treat = treat,
+  Cov = center_log_hi_base,
+  G_pi_10 = c(0, up_g_pi_10),
+  Theta.S_0 = c(b1_SV_S0, b2_SV_S0, b3_SV_S0, b4_SV_S0, beta_sv_S0, sigma_S0),
+  Theta.S_1 = c(b1_SV_S1, b2_SV_S1, b3_SV_S1, b4_SV_S1, beta_sv_S1, sigma_S1),
+  M = 100,
+  Seed = 2026,
+  Center.Cov=FALSE,
+  Monotonicity=TRUE,
+  Independence=FALSE,
+  HAA=TRUE,
+  Cond_ind=TRUE,  
+  Show.Details = TRUE
+)
+```
+
+```{r}
+summary(ica_identify)
+plot(ica_identify)
+```

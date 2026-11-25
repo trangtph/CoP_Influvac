@@ -1,0 +1,602 @@
+---
+title: "Correlate of Protection analysis - Results Summary"
+subtitle: "P_INFL_OO6"
+author: "Trang Tu"
+format: 
+  docx:
+    documentclass: report
+    margin-left: 20 mm
+    margin-right: 20 mm
+    margin-top: 20 mm
+    margin-bottom: 20 mm
+    fig-dpi: 300
+    fig-align: center
+    fig-width: 7.5
+    fig-height: 4.5
+execute: 
+  echo: false
+  warning: true
+  message: true
+  output: true
+  freeze: auto
+editor: visual
+---
+
+```{r}
+library(pacman)
+pacman::p_load(
+here,
+rio,
+ggridges,
+table1,
+grid
+)
+options(scipen = 999)
+
+source(here("Code", "Helper_functions.R"))
+source(here("Code", "SPF.BinCont.Cov_v2.R"))
+```
+
+```{r}
+# Load data
+
+h1n1_ICA_main <- import(here("Results", "h1n1_ICA_main_26-07-06-19-09.csv"))
+h1n1_ICA_mono <- import(here("Results", "h1n1_ICA_mono_26-07-06-22-28.csv"))
+h1n1_ICA_indep <- import(here("Results", "h1n1_ICA_indep_26-07-07-04-15.csv"))
+h1n1_ICA_HVCA <- import(here("Results", "h1n1_ICA_HVCA_26-07-07-08-19.csv"))
+
+h1n1_ICA_Cond_ind <- import(here("Results", "h1n1_ICA_Cond_ind_26-07-07-12-09.csv"))
+h1n1_ICA_full_id_mono <- import(here("Results", "h1n1_ICA_full_id_mono_26-07-06-15-41.csv"))
+h1n1_ICA_full_id_indep <- import(here("Results", "h1n1_ICA_full_id_indep_26-07-06-15-42.csv"))
+
+h1n1_ICA_no_covar_noboot_df  <- import(here("Results", "h1n1_ICA_no_covar_noboot_26_07_13.csv"))
+h1n1_ICA_main_noboot_df <- import(here("Results", "h1n1_ICA_main_noboot_26_07_13.csv"))
+
+h1n1_ICA_all <- bind_rows(
+  main      = h1n1_ICA_main,
+  mono      = h1n1_ICA_mono,
+  indep     = h1n1_ICA_indep,
+  HVCA      = h1n1_ICA_HVCA,
+  cond_ind  = h1n1_ICA_Cond_ind,
+  full_id_mono  = h1n1_ICA_full_id_mono,
+  full_id_indep = h1n1_ICA_full_id_indep,
+  .id = "source"
+)
+
+h1n1_ICA_all$source <- factor(h1n1_ICA_all$source, 
+                              levels = c("full_id_indep","full_id_mono", "cond_ind", "HVCA", "indep", "mono", "main"),
+                              labels = c("Independence, HVCA and CI", "Monotonicity, HVCA and CI", "Conditional independence (CI)",
+                                         "Homogenous variance-covariance (HVCA)",
+                                         "Independence", "Monotonicity", "None (primary analysis)"))
+```
+
+```{r}
+h1n1_ICA_hi_q1 <- import(here("Results", "h1n1_ICA_main_hi_q1_26-07-27-04-15.csv"))
+h1n1_ICA_hi_q3 <- import(here("Results", "h1n1_ICA_main_hi_q3_26-07-27-09-07.csv"))
+
+h1n1_ICA_posthoc <- import(here("Results", "h1n1_ICA_posthoc_26-09-15-05-24.csv"))
+```
+
+```{r}
+h1n1_ICA_main_200b <-  import(here("Results", "h1n1_ICA_main_200boot_26-11-25-19-14.csv"))
+```
+
+
+# 1. H1N1 - Main analysis with no assumption
+
+```{r}
+# Add AIC
+h1n1_ICA_main <- h1n1_ICA_main %>%
+  mutate(
+    AIC_S0 = dev_S0 + 2*12,
+    AIC_S1 = dev_S1 + 2*12,
+  ) %>%
+  mutate(AIC_tot = AIC_S0 + AIC_S1)
+```
+
+```{r}
+h1n1_ICA_main_summary <- summarise_ICA(dat= h1n1_ICA_main)
+```
+
+```{r}
+table1(~ pi_00 + pi_01 + pi_10+ pi_11+ G_rho_01_00+ G_rho_01_01+ G_rho_01_10+ G_rho_01_11+
+       mu_0_00+ mu_0_01+ mu_0_10+ mu_0_11+ gamma_0+ sigma2_00_00 +
+         mu_1_00+ mu_1_01+ mu_1_10+ mu_1_11+ gamma_1 + sigma2_11_00, data = h1n1_ICA_main)
+```
+
+# 2. H1N1 - Secondary analysis: monotonicity assumption
+
+```{r}
+h1n1_ICA_mono_summary <- summarise_ICA(dat= h1n1_ICA_mono)
+```
+
+# 3. H1N1 - Secondary analysis: independence assumption
+
+```{r}
+h1n1_ICA_indep_summary <- summarise_ICA(dat= h1n1_ICA_indep)
+```
+
+# 4. H1N1 - Secondary analysis: HCVA assumption
+
+```{r}
+h1n1_ICA_HVCA_summary <- summarise_ICA(dat= h1n1_ICA_HVCA)
+```
+
+# 5. H1N1 - Secondary analysis: conditional independence assumption
+
+```{r}
+h1n1_ICA_c_ind_summary <- summarise_ICA(dat= h1n1_ICA_Cond_ind)
+```
+
+# 6. H1N1 - Secondary analysis: full identifiability (Monotonicity, HCVA and CI)
+
+```{r}
+h1n1_ICA_c_full_id_mono_summary <- summarise_ICA(dat= h1n1_ICA_full_id_mono)
+```
+
+# 7. H1N1 - Secondary analysis: full identifiability (Independence, HCVA and CI)
+
+```{r}
+h1n1_ICA_c_full_id_indep_summary <- summarise_ICA(dat= h1n1_ICA_full_id_indep)
+```
+
+# 8. Display all above distributions in a ridgeline plot
+
+```{r}
+
+ggplot(h1n1_ICA_all, aes(x = R2_H, y = source, fill = source)) +
+  geom_density_ridges() +
+  scale_fill_discrete(palette = c("#C7C7C7","#AA6F9E", "#4D4D4D", "#009E73", "#e69b00", "#2f357c", "#bf3729")) +
+  theme_ridges() + 
+  labs(x = expression(R[H]^2 ~ "                                "))+
+  theme(legend.position = "none",
+        axis.title.y = element_blank(),
+         plot.background = element_rect(fill='transparent', color=NA)
+        )
+
+ggsave(
+        filename = here("Plot", "h1n1_ICA_all.png" ),
+        dpi = 300,
+        units = "cm"
+      )
+```
+
+Table + figure combined
+
+```{r}
+
+# Values to display beside the ridgeline plot
+ica_summary <- tibble(
+  source = c(
+    "None (primary analysis)",
+    "Monotonicity",
+    "Independence",
+    "Homogenous variance-covariance (HVCA)",
+    "Conditional independence (CI)",
+    "Monotonicity, HVCA and CI",
+    "Independence, HVCA and CI"
+  ),
+  mean_ica = c(
+    0.573,
+    0.569,
+    0.632,
+    0.568,
+    0.557,
+    0.549,
+    0.613
+  ),
+  sdi_80 = c(
+    "[0.423, 0.728]",
+    "[0.421, 0.731]",
+    "[0.476, 0.791]",
+    "[0.391, 0.767]",
+    "[0.444, 0.671]",
+    "[0.463, 0.655]",
+    "[0.515, 0.703]"
+  )
+) %>%
+  mutate(
+    source = factor(source, levels = levels(h1n1_ICA_all$source))
+  )
+
+
+# For centering the X axis label
+x_min <- -0.03
+x_max <- 1.52
+density_center <- 0.50
+
+title_position <- (density_center - x_min) / (x_max - x_min)
+
+# Main plot
+ggplot(
+  h1n1_ICA_all,
+  aes(x = R2_H, y = source, fill = source)
+) +
+  geom_density_ridges() +
+
+  # Optional separator between the plot and numerical columns
+  geom_vline(
+    xintercept = 1.05,
+    colour = "grey75",
+    linewidth = 0.4
+  ) +
+
+  # Mean iCA column
+  geom_text(
+    data = ica_summary,
+    aes(
+      x = 1.16,
+      y = source,
+      label = sprintf("%.3f", mean_ica)
+    ),
+    inherit.aes = FALSE,
+    size = 3.8,
+    hjust = 0.5
+  ) +
+
+  # 80% SDI column
+  geom_text(
+    data = ica_summary,
+    aes(
+      x = 1.39,
+      y = source,
+      label = sdi_80
+    ),
+    inherit.aes = FALSE,
+    size = 3.8,
+    hjust = 0.5
+  ) +
+
+  # Column headings
+  annotate(
+    "text",
+    x = 1.16,
+    y = Inf,
+    label = "Mean ICA",
+    fontface = "bold",
+    size = 4,
+    vjust = -1
+  ) +
+  annotate(
+    "text",
+    x = 1.39,
+    y = Inf,
+    label = "80% SDI",
+    fontface = "bold",
+    size = 4,
+    vjust = -1
+  ) +
+
+  scale_fill_discrete(
+    palette = c(
+      "#C7C7C7",
+      "#AA6F9E",
+      "#4D4D4D",
+      "#009E73",
+      "#e69b00",
+      "#2f357c",
+      "#bf3729"
+    )
+  ) +
+
+  # Extend plotting area to make room for the columns
+  scale_x_continuous(
+    breaks = seq(0, 1, by = 0.25),
+    limits = c(-0.03, 1.52),
+    expand = expansion(mult = c(0, 0))
+  ) +
+
+  # clip = "off" allows headings above the plotting panel
+  coord_cartesian(clip = "off") +
+
+  theme_ridges() +
+
+  labs(
+    x = expression(R[H]^2),
+    y = NULL
+  ) +
+
+  theme(
+    legend.position = "none",
+    axis.title.x = element_text(hjust = title_position, margin = margin(t = 12)), 
+    axis.title.y = element_blank(),
+    plot.background = element_rect(
+      fill = "transparent",
+      colour = NA
+    ),
+
+    # Add room above the plot for the column headings
+    plot.margin = margin(
+      t = 35,
+      r = 15,
+      b = 10,
+      l = 10
+    )
+  )
+
+ggsave(
+        filename = here("Plot", "h1n1_ICA_all2.png" ),
+        dpi = 300,
+        units = "cm",
+        width = 25,
+        height = 10
+      )
+```
+
+Table without borders:
+
+```{r}
+
+# Values to display beside the ridgeline plot
+ica_summary <- tibble(
+  source = c(
+    "None (primary analysis)",
+    "Monotonicity",
+    "Independence",
+    "Homogenous variance-covariance (HVCA)",
+    "Conditional independence (CI)",
+    "Monotonicity, HVCA and CI",
+    "Independence, HVCA and CI"
+  ),
+  mean_ica = c(
+    0.573,
+    0.569,
+    0.632,
+    0.568,
+    0.557,
+    0.549,
+    0.613
+  ),
+  sdi_80 = c(
+    "[0.423, 0.728]",
+    "[0.421, 0.731]",
+    "[0.476, 0.791]",
+    "[0.391, 0.767]",
+    "[0.444, 0.671]",
+    "[0.463, 0.655]",
+    "[0.515, 0.703]"
+  )
+) %>%
+  mutate(
+    source = factor(source, levels = levels(h1n1_ICA_all$source))
+  )
+
+
+# For centering the X axis label
+x_min <- -0.03
+x_max <- 1.52
+density_center <- 0.50
+
+title_position <- (density_center - x_min) / (x_max - x_min)
+
+# Main plot
+ggplot(
+  h1n1_ICA_all,
+  aes(x = R2_H, y = source, fill = source)
+) +
+  geom_density_ridges() +
+
+  # Optional separator between the plot and numerical columns
+  geom_vline(
+    xintercept = 1.05,
+    colour = "grey75",
+    linewidth = 0.4
+  ) +
+
+# Mean iCA column
+geom_label(
+  data = ica_summary,
+  aes(
+    x = 1.16,
+    y = source,
+    label = sprintf("%.3f", mean_ica)
+  ),
+  inherit.aes = FALSE,
+  size = 3.8,
+  hjust = 0.5,
+  fill = "white",
+  colour = "black",
+  label.size = NA,
+  label.padding = unit(0.08, "lines")
+) +
+
+# 80% SDI column
+geom_label(
+  data = ica_summary,
+  aes(
+    x = 1.39,
+    y = source,
+    label = sdi_80
+  ),
+  inherit.aes = FALSE,
+  size = 3.8,
+  hjust = 0.5,
+  fill = "white",
+  colour = "black",
+  label.size = NA,
+  label.padding = unit(0.08, "lines")
+) +
+  annotate(
+  "text",
+  x = 1.16,
+  y = Inf,
+  label = "Mean ICA",
+  fontface = "bold",
+  size = 4,
+  vjust = -1) +
+
+annotate(
+  "text",
+  x = 1.39,
+  y = Inf,
+  label = "80% SDI",
+  fontface = "bold",
+  size = 4,
+  vjust = -1) + 
+
+
+  scale_fill_discrete(
+    palette = c(
+      "#C7C7C7",
+      "#AA6F9E",
+      "#4D4D4D",
+      "#009E73",
+      "#e69b00",
+      "#2f357c",
+      "#bf3729"
+    )
+  ) +
+
+  # Extend plotting area to make room for the columns
+  scale_x_continuous(
+    breaks = seq(0, 1, by = 0.25),
+    limits = c(-0.03, 1.52),
+    expand = expansion(mult = c(0, 0))
+  ) +
+
+  # clip = "off" allows headings above the plotting panel
+  coord_cartesian(clip = "off") +
+
+  theme_ridges() +
+
+  labs(
+    x = expression(R[H]^2),
+    y = NULL
+  ) +
+
+  theme(
+    panel.ontop = FALSE,
+    legend.position = "none",
+    axis.title.x = element_text(hjust = title_position, margin = margin(t = 12)), 
+    axis.title.y = element_blank(),
+    plot.background = element_rect(
+      fill = "white",
+      colour = NA
+    ),
+
+    # Add room above the plot for the column headings
+    plot.margin = margin(
+      t = 35,
+      r = 15,
+      b = 10,
+      l = 10
+    )
+  )
+
+ggsave(
+        filename = here("Plot", "h1n1_ICA_all3.png" ),
+        dpi = 300,
+        units = "cm",
+        width = 25,
+        height = 10
+      )
+```
+
+# 9. Compare H1N1 model with and without covariate
+
+```{r}
+h1n1_ICA_no_covar_noboot_df <- h1n1_ICA_no_covar_noboot_df %>%
+  mutate(
+    AIC_S0 = dev_S0 + 2*12,
+    AIC_S1 = dev_S1 + 2*12
+  ) %>%
+  mutate(AIC_tot = AIC_S0 + AIC_S1)
+
+h1n1_ICA_no_covar_noboot_summary <- summarise_ICA(h1n1_ICA_no_covar_noboot_df) 
+
+```
+
+```{r}
+h1n1_ICA_main_noboot_df <- h1n1_ICA_main_noboot_df %>%
+  mutate(
+    AIC_S0 = dev_S0 + 2*12,
+    AIC_S1 = dev_S1 + 2*12
+  ) %>%
+  mutate(AIC_tot = AIC_S0 + AIC_S1)
+
+h1n1_ICA_main_noboot_summary <- summarise_ICA(h1n1_ICA_main_noboot_df)
+```
+
+# 10. H1N1 models at different pre-HI value
+
+Pre-HI at 1st quantile (log(5))
+
+```{r}
+summarise_ICA(h1n1_ICA_hi_q1)
+
+```
+
+Pre-HI at 3rd quantile (log(20)
+
+```{r}
+summarise_ICA(h1n1_ICA_hi_q3)
+
+```
+
+# 11. H1N1 posthoc analysis
+
+```{r}
+h1n1_ICA_posthoc_summary <- summarise_ICA(dat= h1n1_ICA_posthoc)
+
+```
+
+# 12. SPF
+
+```{r}
+spf_h1n1 <- SPF.BinCont.Cov(
+  h1n1_ICA_main, 
+  a = 0,
+  b = log(32)
+)
+
+
+```
+
+```{r}
+spf_cat <- c("r_min1_min1", "r_0_min1", "r_1_min1", "r_min1_0", "r_0_0", "r_1_0", "r_min1_1", "r_0_1", "r_1_1")
+lapply(spf_h1n1[spf_cat], hist)
+```
+
+```{r}
+spf_cat <- c(
+  "r_min1_min1", "r_0_min1", "r_1_min1",
+  "r_min1_0",    "r_0_0",    "r_1_0",
+  "r_min1_1",    "r_0_1",    "r_1_1"
+)
+
+# Extract data
+dat <- do.call(rbind, lapply(spf_cat, function(nm) {
+
+  parts <- strsplit(sub("^r_", "", nm), "_")[[1]]
+
+  data.frame(
+    value = spf_h1n1[[nm]],
+    dT = parts[1],
+    dS = parts[2]
+  )
+}))
+
+dat$dT <- factor(dat$dT, levels = c("min1", "0", "1"),
+                 labels = c("-1", "0", "1"))
+dat$dS <- factor(dat$dS, levels = c("min1", "0", "1"),
+                 labels = c("(-Inf, log(1)]", "(log(1), log(32)]", "(log(32), +Inf)"))
+
+
+ggplot(dat, aes(x = dS, y = value, fill = dT)) +
+  geom_boxplot(position = position_dodge(width = 0.75)) +
+  scale_fill_manual(
+    values = c("#e69b00", "#2f357c", "#bf3729"),
+    name = expression(Delta*T)
+  ) +
+  labs(x = expression(Delta*S), y = "Probability") +
+  theme_classic()
+
+ggsave(here("Plot", "SPF_H1N1.png"))
+```
+
+# 13. Main analysis, 200 bootstraps
+
+```{r}
+h1n1_ICA_main_200b_summary <- summarise_ICA(dat= h1n1_ICA_main_200b)
+```
+

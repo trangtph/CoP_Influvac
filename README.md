@@ -1,4 +1,4 @@
-# Project Title
+## Project Title
 
 Assessing Immune Correlates Of Protection In Young Children Following Influenza Vaccination: Application Of Information-theoretic Approach
 
@@ -41,7 +41,7 @@ Package versions and dependencies are captured in:
 install.packages("renv")
 ```
 
-2. Ensure the following (uncompressed) folder and files are present in the project directory:
+2. Ensure the following folder and files are present in the project directory:
 
 ```text
 renv/
@@ -89,7 +89,8 @@ renv::restore()
 1. `CoP_analysis_H1N1_search_SV.qmd` - Identify starting values for H1N1 model estimation.
 2. `ICA_run_job_H1N1.R` - Perform primary and secondary H1N1 analyses.
 3. `CoP_analysis_H3N2_search_SV.qmd` - Identify starting values for H3N2 models estimation. 
-(Full primary and secondary analyses for H3N2 were not run because no models showed adequate goodness of fit  )
+(Full primary and secondary analyses for H3N2 were not run because no models showed adequate goodness of fit).
+4. `CoP_summy.qmd` - Generate summary statistics and plots for the H1N1 analyses.
 
 
 ## Authors
